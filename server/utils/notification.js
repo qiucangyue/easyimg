@@ -366,11 +366,14 @@ async function sendTelegramNotification(config, payload) {
 }
 
 /**
- * 转义 Markdown 特殊字符
+ * 转义 Telegram Markdown 特殊字符
+ * 注意：Telegram 的 Markdown 模式只需要转义少量字符
+ * 参考：https://core.telegram.org/bots/api#markdown-style
  */
 function escapeMarkdown(text) {
   if (!text) return ''
-  return String(text).replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1')
+  // 在 Telegram Markdown 模式下，只需要转义 _ * ` [ 这几个字符
+  return String(text).replace(/([_*`\[])/g, '\\$1')
 }
 
 /**
