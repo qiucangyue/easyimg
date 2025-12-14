@@ -253,11 +253,32 @@ async function sendTelegramNotification(config, payload) {
         }
       }
 
-      // 使用 sendPhoto 发送图片，图片会直接显示在对话中
-      await bot.sendPhoto(chatId, imageUrl, {
-        caption: caption,
-        parse_mode: 'Markdown'
-      })
+      try {
+        // 尝试使用 sendPhoto 发送图片，图片会直接显示在对话中
+        await bot.sendPhoto(chatId, imageUrl, {
+          caption: caption,
+          parse_mode: 'Markdown'
+        })
+      } catch (photoError) {
+        // 如果 sendPhoto 失败（例如 Telegram 无法访问图片URL，或图片格式不支持），
+        // 回退到发送带链接的文本消息
+        console.warn('[Notification] Telegram sendPhoto 失败，回退到文本消息:', photoError.message)
+
+        let fallbackMessage = `*${escapeMarkdown(payload.title)}*\n${escapeMarkdown(payload.message)}`
+        fallbackMessage += `\n\n🖼️ *图片链接:* [点击查看](${imageUrl})`
+
+        // 如果有额外数据，添加到消息中
+        if (payload.data && Object.keys(payload.data).length > 0) {
+          fallbackMessage += '\n\n*详细信息:*'
+          for (const [key, value] of Object.entries(payload.data)) {
+            if (key === 'url' || key === 'imageUrl') continue // 跳过图片URL
+            const displayValue = typeof value === 'object' ? JSON.stringify(value) : value
+            fallbackMessage += `\n• ${key}: \`${escapeMarkdown(String(displayValue))}\``
+          }
+        }
+
+        await bot.sendMessage(chatId, fallbackMessage, { parse_mode: 'Markdown' })
+      }
     } else {
       // 没有有效图片URL时，发送普通文本消息
       let message = `*${escapeMarkdown(payload.title)}*\n${escapeMarkdown(payload.message)}`
