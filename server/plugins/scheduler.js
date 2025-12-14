@@ -1,8 +1,11 @@
 import db from '../utils/db.js'
 import { unlink } from 'fs/promises'
 import { existsSync } from 'fs'
-import { startProcessor as startModerationProcessor } from '../utils/moderationQueue.js'
+import { startProcessor as startModerationProcessor, retryFailedTasks } from '../utils/moderationQueue.js'
 import { getUploadsDirPath, getImagePath } from '../utils/upload.js'
+
+// 定时任务间隔（毫秒）
+const RETRY_FAILED_TASKS_INTERVAL = 60 * 60 * 1000  // 1 小时
 
 // 硬删除已软删除的图片文件
 export async function hardDeleteImages() {
@@ -38,8 +41,33 @@ export async function hardDeleteImages() {
   }
 }
 
+// 重试失败的审核任务
+async function retryFailedModerationTasks() {
+  try {
+    // 获取 error 状态的任务数量
+    const errorCount = await db.moderationTasks.count({ status: 'error' })
+
+    if (errorCount === 0) {
+      console.log('[Scheduler] 没有需要重试的失败审核任务')
+      return
+    }
+
+    console.log(`[Scheduler] 发现 ${errorCount} 个失败的审核任务，开始重试...`)
+    const result = await retryFailedTasks()
+    console.log(`[Scheduler] 已重置 ${result.count} 个失败的审核任务`)
+  } catch (error) {
+    console.error('[Scheduler] 重试失败审核任务时出错:', error)
+  }
+}
+
 export default defineNitroPlugin(() => {
   // 启动内容审核任务处理器
   startModerationProcessor()
   console.log('[Scheduler] 内容审核任务处理器已启动')
+
+  // 启动定时任务：每小时重试失败的审核任务
+  setInterval(() => {
+    retryFailedModerationTasks()
+  }, RETRY_FAILED_TASKS_INTERVAL)
+  console.log('[Scheduler] 失败审核任务重试定时器已启动（每小时执行一次）')
 })
