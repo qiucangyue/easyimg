@@ -158,7 +158,7 @@ const toastStore = useToastStore()
 
 // 应用配置
 const appName = computed(() => settingsStore.appSettings.appName || 'EasyImg')
-const appLogo = computed(() => settingsStore.appSettings.appLogo || '')
+const appLogo = computed(() => settingsStore.appSettings.appLogo || '/favicon.png')
 const backgroundUrl = computed(() => settingsStore.appSettings.backgroundUrl || '')
 const backgroundBlur = computed(() => settingsStore.appSettings.backgroundBlur || 0)
 
