@@ -261,11 +261,13 @@ async function sendTelegramNotification(config, payload) {
         })
       } catch (photoError) {
         // 如果 sendPhoto 失败（例如 Telegram 无法访问图片URL，或图片格式不支持），
-        // 回退到发送带链接的文本消息
+        // 回退到发送带链接的文本消息，利用 Telegram 的链接预览功能显示图片
         console.warn('[Notification] Telegram sendPhoto 失败，回退到文本消息:', photoError.message)
 
-        let fallbackMessage = `*${escapeMarkdown(payload.title)}*\n${escapeMarkdown(payload.message)}`
-        fallbackMessage += `\n\n🖼️ *图片链接:* [点击查看](${imageUrl})`
+        // 将图片 URL 放在消息开头（不使用 Markdown 链接格式），
+        // Telegram 会自动为第一个链接生成预览（包括图片缩略图）
+        let fallbackMessage = `${imageUrl}\n\n`
+        fallbackMessage += `*${escapeMarkdown(payload.title)}*\n${escapeMarkdown(payload.message)}`
 
         // 如果有额外数据，添加到消息中
         if (payload.data && Object.keys(payload.data).length > 0) {
@@ -277,7 +279,11 @@ async function sendTelegramNotification(config, payload) {
           }
         }
 
-        await bot.sendMessage(chatId, fallbackMessage, { parse_mode: 'Markdown' })
+        // 不禁用链接预览，让 Telegram 自动生成图片预览
+        await bot.sendMessage(chatId, fallbackMessage, {
+          parse_mode: 'Markdown',
+          disable_web_page_preview: false
+        })
       }
     } else {
       // 没有有效图片URL时，发送普通文本消息
