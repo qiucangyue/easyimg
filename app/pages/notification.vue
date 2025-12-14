@@ -260,7 +260,7 @@
               placeholder="123456789"
             />
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              接收通知的用户或群组 Chat ID，可通过 <a href="https://t.me/userinfobot" target="_blank" class="text-primary-500 hover:underline">@userinfobot</a> 获取
+              接收通知的用户或群组 Chat ID，可通过 <a href="https://t.me/userinfobot" target="_blank" class="text-primary-500 hover:underline">@userinfobot</a> 获取【注意: 需要先给bot发送一条消息】
             </p>
           </div>
 
@@ -392,7 +392,7 @@
               placeholder="SCTxxxxxxxxxxxxxxxxxxxxx"
             />
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              从 <a href="https://sct.ftqq.com/" target="_blank" class="text-primary-500 hover:underline">Server酱官网</a> 获取的 SendKey
+              从 <a href="https://sct.ftqq.com/r/9338" target="_blank" class="text-primary-500 hover:underline">Server酱官网</a> 获取的 SendKey
             </p>
           </div>
 

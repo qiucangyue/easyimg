@@ -219,21 +219,46 @@ async function sendTelegramNotification(config, payload) {
   try {
     console.log('[Notification] Telegram 通知预发送:', payload.title)
 
-    // 构建消息内容（Markdown 格式）
-    let message = `*${payload.title}*\n${payload.message}`
-
-    // 如果有额外数据，添加到消息中
-    if (payload.data && Object.keys(payload.data).length > 0) {
-      message += '\n\n*详细信息:*'
-      for (const [key, value] of Object.entries(payload.data)) {
-        const displayValue = typeof value === 'object' ? JSON.stringify(value) : value
-        message += `\n• ${key}: \`${displayValue}\``
-      }
-    }
-
-    // 使用 node-telegram-bot-api 发送消息
     const bot = new TelegramBot(telegram.token)
-    await bot.sendMessage(Number(telegram.chatId), message, { parse_mode: 'Markdown' })
+    const chatId = Number(telegram.chatId)
+
+    // 检查是否有图片URL需要发送
+    const imageUrl = payload.data?.url || payload.data?.imageUrl
+
+    if (imageUrl) {
+      // 构建带图片的消息内容（Markdown 格式）
+      let caption = `*${escapeMarkdown(payload.title)}*\n${escapeMarkdown(payload.message)}`
+
+      // 如果有额外数据，添加到消息中（排除url字段，因为图片已经显示）
+      if (payload.data && Object.keys(payload.data).length > 0) {
+        caption += '\n\n*详细信息:*'
+        for (const [key, value] of Object.entries(payload.data)) {
+          if (key === 'url' || key === 'imageUrl') continue // 跳过图片URL
+          const displayValue = typeof value === 'object' ? JSON.stringify(value) : value
+          caption += `\n• ${key}: \`${escapeMarkdown(String(displayValue))}\``
+        }
+      }
+
+      // 使用 sendPhoto 发送图片，图片会直接显示在对话中
+      await bot.sendPhoto(chatId, imageUrl, {
+        caption: caption,
+        parse_mode: 'Markdown'
+      })
+    } else {
+      // 没有图片时，发送普通文本消息
+      let message = `*${escapeMarkdown(payload.title)}*\n${escapeMarkdown(payload.message)}`
+
+      // 如果有额外数据，添加到消息中
+      if (payload.data && Object.keys(payload.data).length > 0) {
+        message += '\n\n*详细信息:*'
+        for (const [key, value] of Object.entries(payload.data)) {
+          const displayValue = typeof value === 'object' ? JSON.stringify(value) : value
+          message += `\n• ${key}: \`${escapeMarkdown(String(displayValue))}\``
+        }
+      }
+
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' })
+    }
 
     console.log('[Notification] Telegram 通知发送成功:', payload.title)
     return { success: true }
@@ -241,6 +266,14 @@ async function sendTelegramNotification(config, payload) {
     console.error('[Notification] Telegram 发送失败:', error)
     return { success: false, error: error.message }
   }
+}
+
+/**
+ * 转义 Markdown 特殊字符
+ */
+function escapeMarkdown(text) {
+  if (!text) return ''
+  return String(text).replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1')
 }
 
 /**
@@ -341,6 +374,9 @@ async function sendEmailNotification(config, payload) {
       }
     })
 
+    // 检查是否有图片URL
+    const imageUrl = payload.data?.url || payload.data?.imageUrl
+
     // 构建邮件内容
     let htmlContent = `
       <div class="header">
@@ -350,10 +386,24 @@ async function sendEmailNotification(config, payload) {
         <p>${payload.message}</p>
     `
 
+    // 如果有图片URL，在邮件中显示图片
+    if (imageUrl) {
+      htmlContent += `
+        <div style="margin-top: 20px; text-align: center;">
+          <img src="${imageUrl}" alt="上传的图片" style="max-width: 100%; max-height: 400px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
+          <p style="margin-top: 10px; font-size: 12px; color: #666;">
+            <a href="${imageUrl}" target="_blank" style="color: #007bff;">点击查看原图</a>
+          </p>
+        </div>
+      `
+    }
+
     // 如果有额外数据，添加到邮件中
     if (payload.data && Object.keys(payload.data).length > 0) {
       htmlContent += '<div style="margin-top: 20px;"><h3>详细信息</h3>'
       for (const [key, value] of Object.entries(payload.data)) {
+        // 跳过图片URL，因为已经显示了图片
+        if (key === 'url' || key === 'imageUrl') continue
         const displayValue = typeof value === 'object' ? JSON.stringify(value) : value
         htmlContent += `
           <div class="info-item">
@@ -402,13 +452,23 @@ async function sendServerChanNotification(config, payload) {
 
     const url = `https://sctapi.ftqq.com/${serverchan.sendKey}.send`
 
+    // 检查是否有图片URL
+    const imageUrl = payload.data?.url || payload.data?.imageUrl
+
     // 构建消息内容（Markdown 格式）
     let content = payload.message
+
+    // 如果有图片URL，使用 Markdown 语法显示图片
+    if (imageUrl) {
+      content += `\n\n![图片预览](${imageUrl})`
+    }
 
     // 如果有额外数据，添加到消息中
     if (payload.data && Object.keys(payload.data).length > 0) {
       content += '\n\n### 详细信息\n'
       for (const [key, value] of Object.entries(payload.data)) {
+        // 跳过图片URL，因为已经显示了图片
+        if (key === 'url' || key === 'imageUrl') continue
         const displayValue = typeof value === 'object' ? JSON.stringify(value) : value
         content += `\n- **${key}**: ${displayValue}`
       }
