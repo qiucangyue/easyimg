@@ -2,9 +2,9 @@ import Datastore from '@seald-io/nedb'
 import { join } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 
-// 数据目录：生产环境使用 /app/data，开发环境使用项目根目录下的 db
+// 数据目录：生产环境使用 /app/db，开发环境使用项目根目录下的 db
 const dataDir = process.env.NODE_ENV === 'production'
-  ? '/app/data'
+  ? '/app/db'
   : join(process.cwd(), 'db')
 
 // 确保 db 目录存在

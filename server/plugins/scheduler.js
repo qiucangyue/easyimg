@@ -1,13 +1,8 @@
 import db from '../utils/db.js'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
 import { unlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import { startProcessor as startModerationProcessor } from '../utils/moderationQueue.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-const uploadsDir = join(__dirname, '../../uploads')
+import { getUploadsDirPath, getImagePath } from '../utils/upload.js'
 
 // 硬删除已软删除的图片文件
 export async function hardDeleteImages() {
@@ -22,7 +17,7 @@ export async function hardDeleteImages() {
     for (const image of deletedImages) {
       try {
         // 删除物理文件
-        const filePath = join(uploadsDir, image.filename)
+        const filePath = getImagePath(image.filename)
         if (existsSync(filePath)) {
           await unlink(filePath)
         }

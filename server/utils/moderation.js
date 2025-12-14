@@ -1,11 +1,6 @@
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
 import { readFile } from 'fs/promises'
 import { existsSync } from 'fs'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-const uploadsDir = join(__dirname, '../../uploads')
+import { getImagePath } from './upload.js'
 
 /**
  * 内容审核服务 - 支持多厂商API适配
@@ -405,7 +400,7 @@ export async function moderateImage(imageId, filename, contentSafetyConfig) {
   }
 
   // 读取图片文件
-  const filePath = join(uploadsDir, filename)
+  const filePath = getImagePath(filename)
   if (!existsSync(filePath)) {
     return {
       success: false,

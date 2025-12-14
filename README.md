@@ -82,7 +82,7 @@ docker compose up -d
 ### Docker run部署
 
 ```bash
-docker run -d --name easyimg -p 3000:3000 -v ./data:/app/data -v ./uploads:/app/uploads chaoszhu/easyimg
+docker run -d --name easyimg -p 3000:3000 -v ./db:/app/db -v ./uploads:/app/uploads chaoszhu/easyimg
 ```
 
 
