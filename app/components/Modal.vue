@@ -41,6 +41,7 @@
               v-if="showConfirm"
               @click="confirm"
               :class="confirmClass"
+              :disabled="confirmDisabled"
             >
               {{ confirmText }}
             </button>
@@ -80,13 +81,18 @@ const props = defineProps({
   confirmType: {
     type: String,
     default: 'primary' // 'primary' | 'danger'
+  },
+  confirmDisabled: {
+    type: Boolean,
+    default: false
   }
 })
 
 const emit = defineEmits(['close', 'confirm'])
 
 const confirmClass = computed(() => {
-  return props.confirmType === 'danger' ? 'btn-danger' : 'btn-primary'
+  const baseClass = props.confirmType === 'danger' ? 'btn-danger' : 'btn-primary'
+  return props.confirmDisabled ? `${baseClass} opacity-50 cursor-not-allowed` : baseClass
 })
 
 const close = () => {

@@ -6,7 +6,7 @@
       { 'ring-2 ring-primary-500': selected },
       { 'ring-2 ring-red-500': image.isNsfw }
     ]"
-    @contextmenu.prevent="showContextMenu"
+    @contextmenu.prevent="handleContextMenu"
   >
     <!-- NSFW 标记 (管理员可见) -->
     <div
@@ -49,7 +49,7 @@
     <div
       class="relative bg-gray-100 dark:bg-gray-800 rounded-xl overflow-hidden"
       :style="{ paddingBottom: aspectRatioPadding }"
-      @click="$emit('click')"
+      @click="handleImageClick"
     >
       <!-- 图片元素 - 使用 CSS 过渡实现淡入 -->
       <img
@@ -129,74 +129,12 @@
         审核失败
       </div>
     </div>
-
-    <!-- 右键菜单 -->
-    <Teleport to="body">
-      <Transition name="fade">
-        <div
-          v-if="contextMenuVisible"
-          ref="contextMenuRef"
-          class="fixed z-50 min-w-[160px] bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
-          :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }"
-        >
-          <!-- 复制链接子菜单 -->
-          <div class="py-1">
-            <div class="px-3 py-1.5 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase">
-              复制链接
-            </div>
-            <button
-              v-for="item in copyOptions"
-              :key="item.type"
-              @click="handleCopy(item.type)"
-              class="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
-            >
-              <Icon name="heroicons:clipboard-document" class="w-4 h-4 text-gray-400" />
-              {{ item.label }}
-            </button>
-          </div>
-
-          <!-- 分隔线 -->
-          <div v-if="selectable" class="border-t border-gray-200 dark:border-gray-700"></div>
-
-          <!-- 设置为背景图/Logo（仅登录用户可见） -->
-          <div v-if="selectable" class="py-1">
-            <button
-              @click="handleSetAsBackground"
-              class="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
-            >
-              <Icon name="heroicons:photo" class="w-4 h-4 text-gray-400" />
-              设为全局背景
-            </button>
-            <button
-              @click="handleSetAsLogo"
-              class="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
-            >
-              <Icon name="heroicons:sparkles" class="w-4 h-4 text-gray-400" />
-              设为网站Logo
-            </button>
-          </div>
-
-          <!-- 分隔线 -->
-          <div v-if="selectable" class="border-t border-gray-200 dark:border-gray-700"></div>
-
-          <!-- 删除选项（仅登录用户可见） -->
-          <div v-if="selectable" class="py-1">
-            <button
-              @click="handleDelete"
-              class="w-full px-3 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-2"
-            >
-              <Icon name="heroicons:trash" class="w-4 h-4" />
-              删除图片
-            </button>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
+import { useImagesStore } from '~/stores/images'
 
 const props = defineProps({
   image: {
@@ -213,7 +151,9 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['click', 'select', 'delete', 'copy', 'setAsBackground', 'setAsLogo'])
+const emit = defineEmits(['click', 'select', 'delete', 'contextmenu'])
+
+const imagesStore = useImagesStore()
 
 // 图片加载状态
 const imageLoaded = ref(false)
@@ -227,19 +167,6 @@ const aspectRatioPadding = computed(() => {
   // 默认 4:3 比例
   return '75%'
 })
-
-// 右键菜单
-const contextMenuVisible = ref(false)
-const contextMenuX = ref(0)
-const contextMenuY = ref(0)
-const contextMenuRef = ref(null)
-
-const copyOptions = [
-  { type: 'direct', label: '直链' },
-  { type: 'html', label: 'HTML' },
-  { type: 'markdown', label: 'Markdown' },
-  { type: 'bbcode', label: 'BBCode' }
-]
 
 // 格式化文件大小
 function formatFileSize(bytes) {
@@ -258,92 +185,20 @@ function onImageError() {
   imageError.value = true
 }
 
-// 显示右键菜单
-function showContextMenu(event) {
-  // 计算菜单位置，确保不超出视口
-  const menuWidth = 160
-  const menuHeight = props.selectable ? 280 : 200
-
-  let x = event.clientX
-  let y = event.clientY
-
-  // 检查右边界
-  if (x + menuWidth > window.innerWidth) {
-    x = window.innerWidth - menuWidth - 10
-  }
-
-  // 检查下边界
-  if (y + menuHeight > window.innerHeight) {
-    y = window.innerHeight - menuHeight - 10
-  }
-
-  contextMenuX.value = x
-  contextMenuY.value = y
-  contextMenuVisible.value = true
+// 处理右键菜单 - 触发事件让父组件处理
+function handleContextMenu(event) {
+  emit('contextmenu', event, props.image)
 }
 
-// 隐藏右键菜单
-function hideContextMenu() {
-  contextMenuVisible.value = false
-}
-
-function handleCopy(type) {
-  // 构建完整的 URL（包含域名）
-  const fullUrl = window.location.origin + props.image.url
-  emit('copy', type, fullUrl)
-  hideContextMenu()
-}
-
-function handleDelete() {
-  emit('delete')
-  hideContextMenu()
-}
-
-function handleSetAsBackground() {
-  // 构建完整的 URL（包含域名）
-  const fullUrl = window.location.origin + props.image.url
-  emit('setAsBackground', fullUrl)
-  hideContextMenu()
-}
-
-function handleSetAsLogo() {
-  // 构建完整的 URL（包含域名）
-  const fullUrl = window.location.origin + props.image.url
-  emit('setAsLogo', fullUrl)
-  hideContextMenu()
-}
-
-// 点击外部关闭菜单
-function handleClickOutside(event) {
-  if (contextMenuRef.value && !contextMenuRef.value.contains(event.target)) {
-    hideContextMenu()
+// 处理图片点击
+function handleImageClick() {
+  // 如果有选中的图片且当前可选择，则切换选中状态而不是打开查看器
+  if (props.selectable && imagesStore.hasSelection) {
+    emit('select')
+  } else {
+    emit('click')
   }
 }
-
-// 右键点击其他地方时关闭菜单
-function handleContextMenuOutside(event) {
-  // 如果菜单可见且右键点击不在当前菜单内，则关闭菜单
-  if (contextMenuVisible.value && contextMenuRef.value && !contextMenuRef.value.contains(event.target)) {
-    hideContextMenu()
-  }
-}
-
-// 滚动时关闭菜单
-function handleScroll() {
-  hideContextMenu()
-}
-
-onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
-  document.addEventListener('contextmenu', handleContextMenuOutside)
-  document.addEventListener('scroll', handleScroll, true)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
-  document.removeEventListener('contextmenu', handleContextMenuOutside)
-  document.removeEventListener('scroll', handleScroll, true)
-})
 </script>
 
 <style scoped>

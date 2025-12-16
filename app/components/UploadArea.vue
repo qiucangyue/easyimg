@@ -110,27 +110,98 @@
     <Modal
       :visible="showUrlModal"
       title="从URL上传图片"
-      confirm-text="上传"
+      :confirm-text="urlUploadInProgress ? '上传中...' : '上传'"
+      :confirm-disabled="urlUploadInProgress"
       @close="closeUrlModal"
       @confirm="handleUrlUpload"
     >
       <div class="space-y-4">
-        <div>
+        <!-- URL输入区域 -->
+        <div v-if="!urlUploadInProgress">
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            图片URL
+            图片URL（每行一个，最多20个）
           </label>
-          <input
+          <textarea
             ref="urlInput"
-            v-model="imageUrl"
-            type="url"
-            placeholder="https://example.com/image.jpg"
-            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-            @keydown.enter="handleUrlUpload"
-          />
+            v-model="imageUrls"
+            rows="6"
+            placeholder="https://example.com/image1.jpg&#10;https://example.com/image2.jpg&#10;https://example.com/image3.jpg"
+            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white resize-none font-mono text-sm"
+          ></textarea>
+          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            输入图片的HTTP/HTTPS链接，每行一个，系统将依次下载并保存到本地图库
+          </p>
         </div>
-        <p class="text-sm text-gray-500 dark:text-gray-400">
-          输入图片的HTTP/HTTPS链接，系统将下载并保存到本地图库
-        </p>
+
+        <!-- 上传进度展示 -->
+        <div v-else class="space-y-3">
+          <div class="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+            <span>下载进度</span>
+            <span>{{ urlUploadProgress.completed }}/{{ urlUploadProgress.total }}</span>
+          </div>
+
+          <!-- 进度条 -->
+          <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+            <div
+              class="bg-primary-500 h-2 rounded-full transition-all duration-300"
+              :style="{ width: `${(urlUploadProgress.completed / urlUploadProgress.total) * 100}%` }"
+            ></div>
+          </div>
+
+          <!-- URL列表状态 -->
+          <div class="max-h-64 overflow-y-auto space-y-2">
+            <div
+              v-for="(item, index) in urlUploadItems"
+              :key="index"
+              class="flex items-center gap-2 p-2 rounded-lg text-sm"
+              :class="{
+                'bg-gray-50 dark:bg-gray-800': item.status === 'pending',
+                'bg-blue-50 dark:bg-blue-900/20': item.status === 'downloading',
+                'bg-green-50 dark:bg-green-900/20': item.status === 'success',
+                'bg-red-50 dark:bg-red-900/20': item.status === 'error'
+              }"
+            >
+              <!-- 状态图标 -->
+              <div class="flex-shrink-0">
+                <Icon
+                  v-if="item.status === 'pending'"
+                  name="heroicons:clock"
+                  class="w-4 h-4 text-gray-400"
+                />
+                <Icon
+                  v-else-if="item.status === 'downloading'"
+                  name="heroicons:arrow-down-tray"
+                  class="w-4 h-4 text-blue-500 animate-bounce"
+                />
+                <Icon
+                  v-else-if="item.status === 'success'"
+                  name="heroicons:check-circle"
+                  class="w-4 h-4 text-green-500"
+                />
+                <Icon
+                  v-else-if="item.status === 'error'"
+                  name="heroicons:x-circle"
+                  class="w-4 h-4 text-red-500"
+                />
+              </div>
+
+              <!-- URL文本 -->
+              <div class="flex-1 min-w-0">
+                <p class="truncate text-gray-700 dark:text-gray-300" :title="item.url">
+                  {{ item.url }}
+                </p>
+                <p v-if="item.error" class="text-xs text-red-500 truncate" :title="item.error">
+                  {{ item.error }}
+                </p>
+              </div>
+
+              <!-- 序号 -->
+              <span class="flex-shrink-0 text-xs text-gray-400">
+                #{{ index + 1 }}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </Modal>
   </div>
@@ -159,8 +230,11 @@ const configLoaded = ref(false)
 
 // URL上传相关
 const showUrlModal = ref(false)
-const imageUrl = ref('')
+const imageUrls = ref('')
 const urlInput = ref(null)
+const urlUploadInProgress = ref(false)
+const urlUploadProgress = ref({ total: 0, completed: 0 })
+const urlUploadItems = ref([])
 
 // 监听弹窗打开，自动聚焦输入框
 watch(showUrlModal, (visible) => {
@@ -461,58 +535,176 @@ async function uploadFiles(files) {
 
 // 关闭URL上传弹窗
 function closeUrlModal() {
+  // 如果正在上传，不允许关闭
+  if (urlUploadInProgress.value) {
+    return
+  }
   showUrlModal.value = false
-  imageUrl.value = ''
+  imageUrls.value = ''
+  urlUploadItems.value = []
+  urlUploadProgress.value = { total: 0, completed: 0 }
 }
 
-// 处理URL上传
+// 处理URL上传（支持多个URL）
 async function handleUrlUpload() {
-  const url = imageUrl.value.trim()
-
-  if (!url) {
-    toastStore.error('请输入图片URL')
+  // 如果正在上传，不重复触发
+  if (urlUploadInProgress.value) {
     return
   }
 
-  // 简单验证URL格式
-  try {
-    const urlObj = new URL(url)
-    if (!['http:', 'https:'].includes(urlObj.protocol)) {
-      toastStore.error('仅支持HTTP/HTTPS链接')
-      return
+  // 解析多行URL
+  const urls = imageUrls.value
+    .split('\n')
+    .map(u => u.trim())
+    .filter(u => u.length > 0)
+
+  if (urls.length === 0) {
+    toastStore.error('请输入至少一个图片URL')
+    return
+  }
+
+  // 限制数量
+  if (urls.length > 20) {
+    toastStore.error('最多支持20个URL')
+    return
+  }
+
+  // 验证所有URL格式
+  const invalidUrls = []
+  for (const url of urls) {
+    try {
+      const urlObj = new URL(url)
+      if (!['http:', 'https:'].includes(urlObj.protocol)) {
+        invalidUrls.push(url)
+      }
+    } catch (e) {
+      invalidUrls.push(url)
     }
-  } catch (e) {
-    toastStore.error('无效的URL格式')
+  }
+
+  if (invalidUrls.length > 0) {
+    toastStore.error(`${invalidUrls.length} 个URL格式无效`)
     return
   }
 
-  closeUrlModal()
-  isUploading.value = true
+  // 初始化上传状态
+  urlUploadInProgress.value = true
+  urlUploadProgress.value = { total: urls.length, completed: 0 }
+  urlUploadItems.value = urls.map(url => ({
+    url,
+    status: 'pending',
+    error: null,
+    data: null
+  }))
 
   try {
-    const response = await fetch('/api/upload/url', {
+    // 使用fetch发送POST请求，然后读取SSE响应
+    const response = await fetch('/api/upload/urls', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...authStore.authHeader
       },
-      body: JSON.stringify({ url })
+      body: JSON.stringify({ urls })
     })
 
-    const data = await response.json()
-
-    if (response.ok && data.success) {
-      toastStore.success('图片上传成功')
-      // 刷新图片列表
-      await imagesStore.fetchImages(true)
-    } else {
-      toastStore.error(data.message || '上传失败')
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.message || '上传失败')
     }
+
+    // 读取SSE流
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      // 解析SSE事件
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || '' // 保留不完整的行
+
+      let eventType = ''
+      let eventData = ''
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7)
+        } else if (line.startsWith('data: ')) {
+          eventData = line.slice(6)
+
+          if (eventType && eventData) {
+            try {
+              const data = JSON.parse(eventData)
+              handleSSEEvent(eventType, data)
+            } catch (e) {
+              console.error('解析SSE数据失败:', e)
+            }
+            eventType = ''
+            eventData = ''
+          }
+        }
+      }
+    }
+
   } catch (error) {
     console.error('URL上传失败:', error)
-    toastStore.error('上传失败，请稍后重试')
+    toastStore.error(error.message || '上传失败，请稍后重试')
   } finally {
-    isUploading.value = false
+    urlUploadInProgress.value = false
+    // 刷新图片列表
+    if (urlUploadProgress.value.completed > 0) {
+      await imagesStore.fetchImages(true)
+    }
+  }
+}
+
+// 处理SSE事件
+function handleSSEEvent(eventType, data) {
+  switch (eventType) {
+    case 'start':
+      // 开始事件，可以更新总数
+      urlUploadProgress.value.total = data.total
+      break
+
+    case 'progress':
+      // 进度事件，更新对应URL的状态
+      const index = data.index - 1 // 后端是1-based
+      if (index >= 0 && index < urlUploadItems.value.length) {
+        urlUploadItems.value[index].status = data.status
+        if (data.error) {
+          urlUploadItems.value[index].error = data.error
+        }
+        if (data.data) {
+          urlUploadItems.value[index].data = data.data
+        }
+        // 更新完成数
+        if (data.status === 'success' || data.status === 'error') {
+          urlUploadProgress.value.completed = data.index
+        }
+      }
+      break
+
+    case 'complete':
+      // 完成事件
+      const { successCount, failCount } = data
+      if (successCount > 0 && failCount === 0) {
+        toastStore.success(`成功下载 ${successCount} 张图片`)
+      } else if (successCount > 0 && failCount > 0) {
+        toastStore.success(`成功 ${successCount} 张，失败 ${failCount} 张`)
+      } else if (failCount > 0) {
+        toastStore.error(`全部下载失败`)
+      }
+      break
+
+    case 'error':
+      // 错误事件
+      toastStore.error(data.message || '上传过程中发生错误')
+      break
   }
 }
 

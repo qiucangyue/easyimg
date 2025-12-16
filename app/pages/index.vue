@@ -76,9 +76,7 @@
               @click="openViewer(image)"
               @select="imagesStore.toggleSelect(image.id)"
               @delete="confirmDelete(image)"
-              @copy="handleCopy"
-              @setAsBackground="handleSetAsBackground"
-              @setAsLogo="handleSetAsLogo"
+              @contextmenu="handleImageContextMenu"
             />
           </div>
         </div>
@@ -137,6 +135,69 @@
         确定要删除选中的 {{ imagesStore.selectedIds.length }} 张图片吗？
       </p>
     </Modal>
+
+    <!-- 图片右键菜单 -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="contextMenuVisible"
+          ref="contextMenuRef"
+          class="fixed z-50 min-w-[160px] bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+          :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }"
+        >
+          <!-- 复制链接子菜单 -->
+          <div class="py-1">
+            <div class="px-3 py-1.5 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase">
+              {{ copyMenuTitle }}
+            </div>
+            <button
+              v-for="item in copyOptions"
+              :key="item.type"
+              @click="handleCopyFromMenu(item.type)"
+              class="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+            >
+              <Icon name="heroicons:clipboard-document" class="w-4 h-4 text-gray-400" />
+              {{ item.label }}
+            </button>
+          </div>
+
+          <!-- 分隔线 -->
+          <div v-if="authStore.isAuthenticated" class="border-t border-gray-200 dark:border-gray-700"></div>
+
+          <!-- 设置为背景图/Logo（仅登录用户可见） -->
+          <div v-if="authStore.isAuthenticated" class="py-1">
+            <button
+              @click="handleSetAsBackgroundFromMenu"
+              class="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+            >
+              <Icon name="heroicons:photo" class="w-4 h-4 text-gray-400" />
+              设为全局背景
+            </button>
+            <button
+              @click="handleSetAsLogoFromMenu"
+              class="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+            >
+              <Icon name="heroicons:sparkles" class="w-4 h-4 text-gray-400" />
+              设为网站Logo
+            </button>
+          </div>
+
+          <!-- 分隔线 -->
+          <div v-if="authStore.isAuthenticated" class="border-t border-gray-200 dark:border-gray-700"></div>
+
+          <!-- 删除选项（仅登录用户可见） -->
+          <div v-if="authStore.isAuthenticated" class="py-1">
+            <button
+              @click="handleDeleteFromMenu"
+              class="w-full px-3 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-2"
+            >
+              <Icon name="heroicons:trash" class="w-4 h-4" />
+              删除图片
+            </button>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- 返回顶部按钮 -->
     <Transition
@@ -221,9 +282,33 @@ const imageToDelete = ref(null)
 const showBackToTop = ref(false)
 const scrollThreshold = 300 // 滚动超过300px显示按钮
 
+// 右键菜单相关
+const contextMenuVisible = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+const contextMenuRef = ref(null)
+const contextMenuImage = ref(null)
+
+const copyOptions = [
+  { type: 'direct', label: '直链' },
+  { type: 'html', label: 'HTML' },
+  { type: 'markdown', label: 'Markdown' },
+  { type: 'bbcode', label: 'BBCode' }
+]
+
+// 计算复制链接的标题
+const copyMenuTitle = computed(() => {
+  if (imagesStore.selectedIds.length > 1) {
+    return `复制链接(已选${imagesStore.selectedIds.length}张)`
+  }
+  return '复制链接'
+})
+
 // 处理滚动事件
 function handleScroll() {
   showBackToTop.value = window.scrollY > scrollThreshold
+  // 滚动时关闭右键菜单
+  hideContextMenu()
 }
 
 // 滚动到顶部
@@ -291,6 +376,84 @@ async function handleBatchDelete() {
   showBatchDeleteModal.value = false
 }
 
+// 显示右键菜单
+function handleImageContextMenu(event, image) {
+  // 计算菜单位置，确保不超出视口
+  const menuWidth = 160
+  const menuHeight = authStore.isAuthenticated ? 280 : 200
+
+  let x = event.clientX
+  let y = event.clientY
+
+  // 检查右边界
+  if (x + menuWidth > window.innerWidth) {
+    x = window.innerWidth - menuWidth - 10
+  }
+
+  // 检查下边界
+  if (y + menuHeight > window.innerHeight) {
+    y = window.innerHeight - menuHeight - 10
+  }
+
+  contextMenuX.value = x
+  contextMenuY.value = y
+  contextMenuImage.value = image
+  contextMenuVisible.value = true
+}
+
+// 隐藏右键菜单
+function hideContextMenu() {
+  contextMenuVisible.value = false
+}
+
+// 点击外部关闭菜单
+function handleClickOutside(event) {
+  if (contextMenuRef.value && !contextMenuRef.value.contains(event.target)) {
+    hideContextMenu()
+  }
+}
+
+// 从菜单复制链接
+function handleCopyFromMenu(type) {
+  // 如果有多选，复制所有选中图片的链接
+  if (imagesStore.selectedIds.length > 1) {
+    const urls = imagesStore.images
+      .filter(img => imagesStore.selectedIds.includes(img.id))
+      .map(img => window.location.origin + img.url)
+    handleCopyMultiple(type, urls)
+  } else if (contextMenuImage.value) {
+    const fullUrl = window.location.origin + contextMenuImage.value.url
+    handleCopy(type, fullUrl)
+  }
+  hideContextMenu()
+}
+
+// 从菜单设置背景
+function handleSetAsBackgroundFromMenu() {
+  if (contextMenuImage.value) {
+    const fullUrl = window.location.origin + contextMenuImage.value.url
+    handleSetAsBackground(fullUrl)
+  }
+  hideContextMenu()
+}
+
+// 从菜单设置Logo
+function handleSetAsLogoFromMenu() {
+  if (contextMenuImage.value) {
+    const fullUrl = window.location.origin + contextMenuImage.value.url
+    handleSetAsLogo(fullUrl)
+  }
+  hideContextMenu()
+}
+
+// 从菜单删除
+function handleDeleteFromMenu() {
+  if (contextMenuImage.value) {
+    confirmDelete(contextMenuImage.value)
+  }
+  hideContextMenu()
+}
+
 // 复制链接
 function handleCopy(type, url) {
   let text = ''
@@ -311,6 +474,32 @@ function handleCopy(type, url) {
 
   navigator.clipboard.writeText(text).then(() => {
     toastStore.success('已复制到剪贴板')
+  }).catch(() => {
+    toastStore.error('复制失败')
+  })
+}
+
+// 复制多张图片链接
+function handleCopyMultiple(type, urls) {
+  let texts = []
+  switch (type) {
+    case 'direct':
+      texts = urls
+      break
+    case 'html':
+      texts = urls.map(url => `<img src="${url}" alt="image" />`)
+      break
+    case 'markdown':
+      texts = urls.map(url => `![image](${url})`)
+      break
+    case 'bbcode':
+      texts = urls.map(url => `[img]${url}[/img]`)
+      break
+  }
+
+  const text = texts.join('\n')
+  navigator.clipboard.writeText(text).then(() => {
+    toastStore.success(`已复制 ${urls.length} 张图片链接到剪贴板`)
   }).catch(() => {
     toastStore.error('复制失败')
   })
@@ -394,6 +583,9 @@ onMounted(async () => {
   // 监听滚动事件
   window.addEventListener('scroll', handleScroll, { passive: true })
 
+  // 监听点击事件关闭右键菜单
+  document.addEventListener('click', handleClickOutside)
+
   // 获取图片列表（authStore.init() 已在插件中调用）
   await imagesStore.fetchImages(true)
 
@@ -407,10 +599,21 @@ onUnmounted(() => {
   }
   window.removeEventListener('resize', updateColumnCount)
   window.removeEventListener('scroll', handleScroll)
+  document.removeEventListener('click', handleClickOutside)
 })
 </script>
 
 <style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
 .masonry-container {
   display: flex;
   gap: 16px;
