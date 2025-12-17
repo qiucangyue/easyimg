@@ -153,7 +153,7 @@ node .output/server/index.mjs
 
 ```yaml
 volumes:
-  - ./data:/app/data
+  - ./db:/app/db
   - ./uploads:/app/uploads
 ```
 
